@@ -33,16 +33,16 @@ functions {
   // Approximation to standard bivariate normal CDF:
   // Phi2(a,b;rho) = P(Z1<=a, Z2<=b), where corr(Z1,Z2)=rho
   // Uses Gauss–Legendre quadrature (no integrate_1d and no MVN lcdf/cdf needed).
-  real bvnorm_cdf_std(real a, real b, real rho) {
+  real my_bvnorm_std(real a, real b, real rho) {
     real rho_c = fmin(0.999999, fmax(-0.999999, rho));
 
     // Handle negative correlation via identity:
     // Phi2(a,b;rho) = Phi(a) - Phi2(a,-b;-rho), for rho<0
     if (rho_c < 0)
-      return Phi(a) - bvnorm_cdf_std(a, -b, -rho_c);
+      return Phi(a) - my_bvnorm_std(a, -b, -rho_c);
 
     // Independence
-    if (fabs(rho_c) < 1e-12)
+    if (abs(rho_c) < 1e-12)
       return Phi(a) * Phi(b);
 
     real theta = asin(rho_c);  // in (0, pi/2)
@@ -67,13 +67,13 @@ functions {
   }
 
   // General bivariate normal CDF with means, sds, and correlation
-  real bvnorm_cdf(real y1, real y2,
+  real my_bvnorm(real y1, real y2,
                   real mu1, real mu2,
                   real s1,  real s2,
                   real rho) {
     real a = (y1 - mu1) / s1;
     real b = (y2 - mu2) / s2;
-    return bvnorm_cdf_std(a, b, rho);
+    return my_bvnorm_std(a, b, rho);
   }
 }
 
@@ -94,30 +94,34 @@ data {
 parameters {
   vector[p] beta;
   vector[q] gamma;
-  real<lower=0,upper=1> rho;
+  real rho_raw;
   real<lower=0> sigma;
   real lambda;
-   real murh;               
-  real<lower=0> sigmarh;
 }
 
-transformed parameters{
-  real<lower=0> sigma2=sigma^2;
-  real lambdat= -lambda*rho/sqrt(sigma2+lambda^2);
-  real auxmt= sigma*rho/(sigma2+lambda^2);
-  real auxkt= -lambdat/(sigma*rho);
-  real<lower=0> Omega11=(1 - rho^2)+lambdat^2;
-  real rhoaaux= -lambdat/sqrt(Omega11);
+transformed parameters {
+  real<lower=0> sigma2 = sigma^2;
+  real rho = tanh(rho_raw);
+  real lambdat = -lambda * rho / sqrt(sigma2 + lambda^2);
+  real auxmt = sigma * rho / (sigma2 + lambda^2);
+  real auxkt = lambda / (sigma * sqrt(sigma2 + lambda^2));
+  real<lower=0> Omega11 =
+      (1 - rho^2) + lambdat^2;
+  real rhoaaux =
+      -lambdat / sqrt(Omega11);
 }
 
 model {
   // naive (truncated) priors
   beta ~ multi_normal(rep_vector(0, p), diag_matrix(rep_vector(100, p)));
   gamma ~ multi_normal(rep_vector(0, q), diag_matrix(rep_vector(100, q)));
+  rho_raw ~ normal(0, 1);
+  sigma ~ normal(0, 2);
+  lambda ~ normal(0, 5);
   //rho ~ normal(murh,sigmarh);
   //sigma ~ cauchy(0, 4);
   //lambda ~ cauchy(0, 4);
-  // murh ~ normal(0, 1); 
+  // murh ~ normal(0, 1);
   //sigmarh ~ cauchy(0, 4);
   {
     // log-likelihood
@@ -128,7 +132,7 @@ model {
       if(D[n] > 0) {
         real mut1 =  Zg[n]+auxmt*(y[ny]- Xb[ny]);
         real mut2 = auxkt*(y[ny]- Xb[ny]);
-        real pp = bvnorm_cdf(-mut1, mut2, 0, 0, sqrt(Omega11), 1, rhoaaux);
+        real pp = my_bvnorm(-mut1, mut2, 0, 0, sqrt(Omega11), 1, rhoaaux);
         real aa = Phi(mut2);
         target += normal_lpdf(y[ny] | Xb[ny], sqrt(sigma2+lambda^2))+log(aa-pp)+log(2);
         ny += 1;
@@ -162,7 +166,7 @@ generated quantities {
         auxkt * (y[ny] - Xb[ny]);
 
       real pp =
-        bvnorm_cdf(
+        my_bvnorm(
           -mut1,
           mut2,
           0,
