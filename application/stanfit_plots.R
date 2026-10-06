@@ -1,4 +1,90 @@
 
+load("C:\\Users\\heeju\\OneDrive\\바탕 화면\\RCH\\Stan\\application\\fit.n_stan2.RData")
+
+fit.n_stan[[2]]
+
+fit.sn_stan <- readRDS("C:\\Users\\heeju\\OneDrive\\바탕 화면\\Bayesian Heckman codes\\app1_fit_sn_stan.rds")
+print(
+  fit.sn_stan,
+  pars = c(
+    "beta",
+    "gamma",
+    "sigma2",
+    "rho",
+    "lambda",
+    "log_lik_total"
+  )
+)
+str(fit.n_stan)
+
+##
+
+library(rstan)
+library(ggplot2)
+
+load("C:\\Users\\heeju\\OneDrive\\바탕 화면\\RCH\\Stan\\application\\fit.n_stan2.RData")
+fit.sn_stan <- readRDS("C:\\Users\\heeju\\OneDrive\\바탕 화면\\Bayesian Heckman codes\\app1_fit_sn_stan.rds")
+
+## ---- 파라미터 / 변수 이름 (모형식 순서대로 수정) ----
+pars     <- c(paste0("beta[", 2:3, "]"), paste0("gamma[", c(2:3,5:7), "]"))
+vars_out <- c("educ", "city")                                   # beta[2], beta[3]
+vars_sel <- c("hwage", "youngkids", "feduc", "educ", "city")  # gamma[2]~gamma[7]
+
+get_ci <- function(fit, model) {
+  draws <- as.matrix(fit, pars = pars)
+  data.frame(
+    param = pars,
+    model = model,
+    med = apply(draws, 2, median),
+    l95 = apply(draws, 2, quantile, 0.025),
+    u95 = apply(draws, 2, quantile, 0.975),
+    l80 = apply(draws, 2, quantile, 0.10),
+    u80 = apply(draws, 2, quantile, 0.90)
+  )
+}
+
+df <- rbind(get_ci(fit.n_stan[[1]], "SLn"),
+            get_ci(fit.sn_stan,      "SLsn"))
+
+df$eq <- factor(ifelse(grepl("beta", df$param), "Outcome", "Selection"),
+                levels = c("Outcome", "Selection"))
+
+key <- data.frame(
+  param = pars,
+  var   = c(vars_out, vars_sel),
+  pos   = c(8:7, 5:1)          # outcome 2개, (빈칸 7), selection 6개
+)
+df <- merge(df, key, by = "param")
+df$y <- df$pos + ifelse(df$model == "SLn", 0.18, -0.18)   # SLn 위, SLsn 아래
+
+ggplot(df, aes(y = y, colour = model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_segment(aes(x = l95, xend = u95, yend = y), linewidth = 0.5) +
+  geom_segment(aes(x = l80, xend = u80, yend = y), linewidth = 1.6) +
+  geom_point(aes(x = med), size = 2.2) +
+  scale_y_continuous(breaks = key$pos, labels = key$var,
+                     expand = expansion(add = 0.6)) +
+  scale_colour_manual(values = c(SLn = "#1f4e79", SLsn = "#b2182b")) +
+  facet_grid(eq ~ ., scales = "free", space = "free_y", switch = "y") +
+  labs(x = "Posterior estimate", y = NULL, colour = NULL) +
+  theme_bw(base_size = 15) +
+  theme(legend.position   = "top",
+        legend.text       = element_text(size = 15),
+        strip.placement   = "outside",
+        strip.background  = element_rect(fill = "grey90"),
+        strip.text.y.left = element_text(angle = 90, face = "bold", size = 15),
+        axis.text.y       = element_text(face = "bold", size = 14, colour = "black"),
+        axis.text.x       = element_text(size = 13, colour = "black"),
+        axis.title.x      = element_text(size = 15),
+        panel.grid.minor  = element_blank())
+
+ggsave("app1_compare.pdf", width = 7, height = 5)
+
+
+
+###################
+###################
+###################
 
 load("C:\\Users\\heeju\\OneDrive\\바탕 화면\\RCH\\Stan\\application\\fit.n_stan.RData")
 
